@@ -1,3 +1,6 @@
+/**
+ * snabbdom本身依赖打包
+ */
 import {init} from './snabbdom';
 import {attributesModule} from './modules/attributes'; // for setting attributes on DOM elements
 import {classModule} from './modules/class'; // makes it easy to toggle classes

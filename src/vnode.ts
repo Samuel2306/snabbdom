@@ -36,6 +36,16 @@ export interface VNodeData {
   [key: string]: any; // for any other 3rd party module
 }
 
+/**
+ * @param sel：选择器
+ * @param data：绑定的数据，可以有以下类型：attribute、props、eventlistner、
+ class、dataset、hook
+ * @param children：子节点数组
+ * @param text：当前text节点内容
+ * @param elm：对真实dom element的引用
+ * @returns {{sel: (string|undefined), data: (any|undefined), children: (Array<VNode|string>|undefined), text: (string|undefined), elm: (Element|Text|undefined), key: any}}
+ * key属性用于不同vnode之间的对比
+ */
 export function vnode(sel: string | undefined,
                       data: any | undefined,
                       children: Array<VNode | string> | undefined,

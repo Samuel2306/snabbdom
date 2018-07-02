@@ -1,3 +1,8 @@
+/**
+ * 改文件就是对原生DOM操作做了一层抽象
+ */
+
+
 export interface DOMAPI {
   createElement: (tagName: any) => HTMLElement;
   createElementNS: (namespaceURI: string, qualifiedName: string) => Element;
