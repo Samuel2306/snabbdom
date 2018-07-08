@@ -232,6 +232,38 @@ export function init(modules: Array<Partial<Module>>, domApi?: DOMAPI) {
     }
   }
 
+  // 对于同层的子节点，snabbdom是主要有删除、创建的操作，同时通过移位的方法，达到最大复用存在节点的目的其中需要维护四个索引，分别是：
+  /*
+    oldStartIdx => 旧头索引
+    oldEndIdx => 旧尾索引
+    newStartIdx => 新头索引
+    newEndIdx => 新尾索引
+  */
+  // 然后开始将旧子节点组和新子节点组进行逐一比对，直到遍历完任一子节点组，比对策略有5种：
+  /**
+   * oldStartVnode和newStartVnode进行比对，如果相似，则进行patch，然后新旧头索引都后移
+   * oldEndVnode和newEndVnode进行比对，如果相似，则进行patch，然后新旧尾索引前移
+   * oldStartVnode和newEndVnode进行比对，如果相似，则进行patch，将旧节点移位到最后
+   *    然后旧头索引后移，尾索引前移，为什么要这样做呢？我们思考一种情况，如旧节点为【5,1,2,3,4】
+        ，新节点为【1,2,3,4,5】，如果缺乏这种判断，意味着需要先将5->1,1->2,2->3,3->4,4->5五
+        次删除插入操作，即使是有了key-index来复用，也会出现也会出现【5,1,2,3,4】->
+        【1,5,2,3,4】->【1,2,5,3,4】->【1,2,3,5,4】->【1,2,3,4,5】共4次操作，如果
+        有了这种判断，我们只需要将5插入到旧尾索引后面即可，从而实现右移
+   * oldEndVnode和newStartVnode进行比对，处理和上面类似，只不过改为左移
+   * 如果以上情况都失败了，我们就只能复用key相同的节点了。首先我们要通过createKeyToOldIdx
+   *    创建key-index的映射，如果新节点在旧节点中不存在，我们将它插入到旧头索引节点前，
+        然后新头索引向后；如果新节点在就旧节点组中存在，先找到对应的旧节点，然后patch，并将
+        旧节点组中对应节点设置为undefined,代表已经遍历过了，不再遍历，否则可能存在重复
+        插入的问题，最后将节点移位到旧头索引节点之前，新头索引向后
+   * 遍历完之后，将剩余的新Vnode添加到最后一个新节点的位置后或者删除多余的旧节点
+     */
+  /**
+   *
+   * @param parentElm 父节点
+   * @param oldCh 旧节点数组
+   * @param newCh 新节点数组
+   * @param insertedVnodeQueue
+     */
   function updateChildren(parentElm: Node,
                           oldCh: Array<VNode>,
                           newCh: Array<VNode>,
@@ -257,50 +289,82 @@ export function init(modules: Array<Partial<Module>>, domApi?: DOMAPI) {
         newStartVnode = newCh[++newStartIdx];
       } else if (newEndVnode == null) {
         newEndVnode = newCh[--newEndIdx];
-      } else if (sameVnode(oldStartVnode, newStartVnode)) {
+      }
+      // 如果旧头索引节点和新头索引节点相同
+      else if (sameVnode(oldStartVnode, newStartVnode)) {
+        //对旧头索引节点和新头索引节点进行diff更新， 从而达到复用节点效果
         patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue);
+        //旧头索引向后
         oldStartVnode = oldCh[++oldStartIdx];
+        //新头索引向后
         newStartVnode = newCh[++newStartIdx];
-      } else if (sameVnode(oldEndVnode, newEndVnode)) {
+      }
+      //如果旧尾索引节点和新尾索引节点相似，可以复用
+      else if (sameVnode(oldEndVnode, newEndVnode)) {
+        //旧尾索引节点和新尾索引节点进行更新
         patchVnode(oldEndVnode, newEndVnode, insertedVnodeQueue);
+        //旧尾索引向前
         oldEndVnode = oldCh[--oldEndIdx];
+        //新尾索引向前
         newEndVnode = newCh[--newEndIdx];
-      } else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
+      }
+      //如果旧头索引节点和新头索引节点相似，可以通过移动来复用
+      //如旧节点为【5,1,2,3,4】，新节点为【1,2,3,4,5】，如果缺乏这种判断，意味着
+      //那样需要先将5->1,1->2,2->3,3->4,4->5五次删除插入操作，即使是有了key-index来复用，
+      // 也会出现【5,1,2,3,4】->【1,5,2,3,4】->【1,2,5,3,4】->【1,2,3,5,4】->【1,2,3,4,5】
+      // 共4次操作，如果有了这种判断，我们只需要将5插入到最后一次操作即可
+      else if (sameVnode(oldStartVnode, newEndVnode)) { // Vnode moved right
         patchVnode(oldStartVnode, newEndVnode, insertedVnodeQueue);
         api.insertBefore(parentElm, oldStartVnode.elm as Node, api.nextSibling(oldEndVnode.elm as Node));
         oldStartVnode = oldCh[++oldStartIdx];
         newEndVnode = newCh[--newEndIdx];
-      } else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
+      }
+      //原理与上面相同
+      else if (sameVnode(oldEndVnode, newStartVnode)) { // Vnode moved left
         patchVnode(oldEndVnode, newStartVnode, insertedVnodeQueue);
         api.insertBefore(parentElm, oldEndVnode.elm as Node, oldStartVnode.elm as Node);
         oldEndVnode = oldCh[--oldEndIdx];
         newStartVnode = newCh[++newStartIdx];
-      } else {
+      }
+      //如果上面的判断都不通过，我们就需要key-index表来达到最大程度复用了
+      else {
+        //如果不存在旧节点的key-index表，则创建
         if (oldKeyToIdx === undefined) {
           oldKeyToIdx = createKeyToOldIdx(oldCh, oldStartIdx, oldEndIdx);
         }
+        //找到新节点在旧节点组中对应节点的位置
         idxInOld = oldKeyToIdx[newStartVnode.key as string];
+        //如果新节点在旧节点中不存在，我们将它插入到旧头索引节点前，然后新头索引向后
         if (isUndef(idxInOld)) { // New element
           api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
           newStartVnode = newCh[++newStartIdx];
         } else {
+          //如果新节点在就旧节点组中存在，先找到对应的旧节点
           elmToMove = oldCh[idxInOld];
           if (elmToMove.sel !== newStartVnode.sel) {
             api.insertBefore(parentElm, createElm(newStartVnode, insertedVnodeQueue), oldStartVnode.elm as Node);
           } else {
+            //先将新节点和对应旧节点作更新
             patchVnode(elmToMove, newStartVnode, insertedVnodeQueue);
+            //然后将旧节点组中对应节点设置为undefined,代表已经遍历过了，不在遍历，否则可能存在重复插入的问题
+
             oldCh[idxInOld] = undefined as any;
+            //插入到旧头索引节点之前
             api.insertBefore(parentElm, (elmToMove.elm as Node), oldStartVnode.elm as Node);
           }
+          //新头索引向后
           newStartVnode = newCh[++newStartIdx];
         }
       }
     }
     if (oldStartIdx <= oldEndIdx || newStartIdx <= newEndIdx) {
+      //当旧头索引大于旧尾索引时，代表旧节点组已经遍历完，将剩余的新Vnode添加到最后一个新节点的位置后
       if (oldStartIdx > oldEndIdx) {
         before = newCh[newEndIdx+1] == null ? null : newCh[newEndIdx+1].elm;
         addVnodes(parentElm, before, newCh, newStartIdx, newEndIdx, insertedVnodeQueue);
-      } else {
+      }
+      //如果新节点组先遍历完，那么代表旧节点组中剩余节点都不需要，所以直接删除
+      else {
         removeVnodes(parentElm, oldCh, oldStartIdx, oldEndIdx);
       }
     }
@@ -308,49 +372,73 @@ export function init(modules: Array<Partial<Module>>, domApi?: DOMAPI) {
 
   function patchVnode(oldVnode: VNode, vnode: VNode, insertedVnodeQueue: VNodeQueue) {
     let i: any, hook: any;
+    // 在patch之前，先调用vnode.data的prepatch钩子
     if (isDef(i = vnode.data) && isDef(hook = i.hook) && isDef(i = hook.prepatch)) {
       i(oldVnode, vnode);
     }
     const elm = vnode.elm = (oldVnode.elm as Node);
     let oldCh = oldVnode.children;
     let ch = vnode.children;
+    // 如果oldvnode和vnode的引用相同，说明没发生任何变化直接返回，避免性能浪费
     if (oldVnode === vnode) return;
+    // 如果vnode和oldvnode相似，那么我们要对oldvnode本身进行更新
     if (vnode.data !== undefined) {
+      // 首先调用全局的update钩子，对vnode.elm本身属性进行更新
       for (i = 0; i < cbs.update.length; ++i) cbs.update[i](oldVnode, vnode);
+      // 然后调用vnode.data里面的update钩子,再次对vnode.elm更新
       i = vnode.data.hook;
       if (isDef(i) && isDef(i = i.update)) i(oldVnode, vnode);
     }
+    // 如果vnode不是text节点
     if (isUndef(vnode.text)) {
+      // 如果vnode和oldVnode都有子节点
       if (isDef(oldCh) && isDef(ch)) {
+        // 当Vnode和oldvnode的子节点不同时，调用updatechilren函数，diff子节点
         if (oldCh !== ch) updateChildren(elm, oldCh as Array<VNode>, ch as Array<VNode>, insertedVnodeQueue);
-      } else if (isDef(ch)) {
+      }
+      // 如果vnode有子节点，oldvnode没子节点
+      else if (isDef(ch)) {
+        //oldvnode是text节点，则将elm的text清除
         if (isDef(oldVnode.text)) api.setTextContent(elm, '');
+        //并添加vnode的children
         addVnodes(elm, null, ch as Array<VNode>, 0, (ch as Array<VNode>).length - 1, insertedVnodeQueue);
-      } else if (isDef(oldCh)) {
+      }
+      // 如果oldvnode有children，而vnode没children，则移除elm的children
+      else if (isDef(oldCh)) {
         removeVnodes(elm, oldCh as Array<VNode>, 0, (oldCh as Array<VNode>).length - 1);
-      } else if (isDef(oldVnode.text)) {
+      }
+      // 如果vnode和oldvnode都没chidlren，且vnode没text，则删除oldvnode的text
+      else if (isDef(oldVnode.text)) {
         api.setTextContent(elm, '');
       }
-    } else if (oldVnode.text !== vnode.text) {
+    }
+    // 如果oldvnode的text和vnode的text不同，则更新为vnode的text
+    else if (oldVnode.text !== vnode.text) {
       api.setTextContent(elm, vnode.text as string);
     }
+    // patch完，触发postpatch钩子
     if (isDef(hook) && isDef(i = hook.postpatch)) {
       i(oldVnode, vnode);
     }
   }
-
+  // 我们需要明确的一个是，如果按照传统的diff算法，那么为了找到最小变化，需要逐层逐层的去搜索比较，这样时间复杂度将会达到 O(n^3)的级别，代价十分高
+  // vdom采取的是一种简化的思路，只比较同层节点，如果不同，那么即使该节点的子节点没变化，我们也不复用，直接将从父节点开始的子树全部删除，然后再重新创建节点添加到新的位置。如果父节点没变化，我们就比较所有同层的子节点，对这些子节点进行删除、创建、移位操作
+  // patch只需要对两个vnode进行判断是否相似，如果相似，则对他们进行patchVnode操作，否则直接用vnode替换oldvnode
   return function patch(oldVnode: VNode | Element, vnode: VNode): VNode {
     let i: number, elm: Node, parent: Node;
+    // 记录被插入的vnode队列，用于批触发insert
     const insertedVnodeQueue: VNodeQueue = [];
+    //调用全局pre钩子
     for (i = 0; i < cbs.pre.length; ++i) cbs.pre[i]();
-
+    // 如果oldvnode是dom节点，转化为oldvnode
     if (!isVnode(oldVnode)) {
       oldVnode = emptyNodeAt(oldVnode);
     }
-
+    // 如果oldvnode与vnode相似，进行更新
     if (sameVnode(oldVnode, vnode)) {
       patchVnode(oldVnode, vnode, insertedVnodeQueue);
     } else {
+      // 否则，将vnode插入，并将oldvnode从其父节点上直接删除
       elm = oldVnode.elm as Node;
       parent = api.parentNode(elm);
 
@@ -361,11 +449,13 @@ export function init(modules: Array<Partial<Module>>, domApi?: DOMAPI) {
         removeVnodes(parent, [oldVnode], 0, 0);
       }
     }
-
+    // 插入完后，调用被插入的vnode的insert钩子
     for (i = 0; i < insertedVnodeQueue.length; ++i) {
       (((insertedVnodeQueue[i].data as VNodeData).hook as Hooks).insert as any)(insertedVnodeQueue[i]);
     }
+    // 然后调用全局下的post钩子
     for (i = 0; i < cbs.post.length; ++i) cbs.post[i]();
+    // 返回vnode用作下次patch的oldvnode
     return vnode;
   };
 }

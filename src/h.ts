@@ -65,6 +65,7 @@ export function h(sel: any, b?: any, c?: any): VNode {
   ) {
     addNS(data, children, sel);
   }
+  // 创建并返回一个vnode
   return vnode(sel, data, children, text, undefined);
 };
 export default h;

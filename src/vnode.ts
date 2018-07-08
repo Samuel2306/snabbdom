@@ -18,7 +18,7 @@ export interface VNode {
   text: string | undefined;
   key: Key | undefined;
 }
-
+// 定义了每个vnode的数据格式
 export interface VNodeData {
   props?: Props;
   attrs?: Attrs;
@@ -37,15 +37,16 @@ export interface VNodeData {
 }
 
 /**
- * @param sel：选择器
- * @param data：绑定的数据，可以有以下类型：attribute、props、eventlistner、
- class、dataset、hook
- * @param children：子节点数组
- * @param text：当前text节点内容
+ * @param sel：选择器，可以是custom tag, 可以是'div','span',etc,代表这个virtual dom的tag name
+ * @param data：virtual dom数据,它们与dom element的prop、attr的语义类似。但是virtual dom包含的数据可以更灵活
+ * @param children：子节点数组,但是这是vdom的children. vdom的实现重点就是对children的patch上
+ * @param text：对应element.textContent,在children里定义一个string,那么我们会为这个string创建一个textNode
  * @param elm：对真实dom element的引用
+ * key：用于提示children patch过程
  * @returns {{sel: (string|undefined), data: (any|undefined), children: (Array<VNode|string>|undefined), text: (string|undefined), elm: (Element|Text|undefined), key: any}}
  * key属性用于不同vnode之间的对比
  */
+// vnode构造函数
 export function vnode(sel: string | undefined,
                       data: any | undefined,
                       children: Array<VNode | string> | undefined,
