@@ -47,6 +47,7 @@ var detailView = function detailView(movie) {
   }, [h('h2', 'Description:'), h('span', movie.desc)])])]);
 };
 
+// 创建列表并绑定click事件
 var overviewView = function overviewView(movies) {
   return h('div.page', { style: fadeInOutStyle }, [h('div.header', [h('div.header-content.overview', {
     style: fadeInOutStyle
@@ -65,11 +66,14 @@ var overviewView = function overviewView(movies) {
 };
 
 var view = function view(data) {
+  // h创建并返回一个vnode
   return h('div.page-container', [data.selected ? detailView(data.selected) : overviewView(data.movies)]);
 };
 
 window.addEventListener('DOMContentLoaded', function () {
+  debugger
   var container = document.getElementById('container');
+  // data就是前面定義的所有
   vnode = patch(container, view(data));
   render();
 });
@@ -674,10 +678,12 @@ function init(modules) {
   return function (oldVnode, vnode) {
     var i;
     var insertedVnodeQueue = [];
+    // 如果定义了pre钩子函数，就触发pre钩子函数
     for (i = 0; i < cbs.pre.length; ++i) cbs.pre[i]();
     if (oldVnode instanceof Element) {
       if (oldVnode.parentElement !== null) {
         createElm(vnode, insertedVnodeQueue);
+        // 替换父节点里面原来的节点
         oldVnode.parentElement.replaceChild(vnode.elm, oldVnode);
       } else {
         oldVnode = emptyNodeAt(oldVnode);

@@ -12,8 +12,10 @@ import htmlDomApi, {DOMAPI} from './htmldomapi';
 function isUndef(s: any): boolean { return s === undefined; }
 function isDef(s: any): boolean { return s !== undefined; }
 
+// 定义一种全部由VNode组成的数组
 type VNodeQueue = Array<VNode>;
 
+// 定义一个创建空node的方法
 const emptyNode = vnode('', {}, [], undefined, undefined);
 
 // 用于同层次的oldvnode与vnode的比较，如果同层次节点的key和sel都相同我们就可以保留这个节点，否则直接替换节点
